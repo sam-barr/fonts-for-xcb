@@ -504,7 +504,7 @@ xcbft_draw_text(
 
 	fmt = xcb_render_util_find_standard_format(
 		fmt_rep,
-		XCB_PICT_STANDARD_RGB_24
+		XCB_PICT_STANDARD_ARGB_32
 	);
 
 	// create the picture with its attribute and format
