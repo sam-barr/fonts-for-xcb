@@ -15,7 +15,6 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/xcb_renderutil.h>
-#include <xcb/xcb_xrm.h>
 
 #include "../utf8_utils/utf8.h"
 
@@ -748,66 +747,4 @@ xcbft_load_glyph(
 	xcb_flush(c);
 	return glyph_advance;
 }
-
-long
-xcbft_get_dpi(xcb_connection_t *c)
-{
-	int i;
-	long dpi;
-	long xres;
-	xcb_xrm_database_t *xrm_db;
-	xcb_screen_iterator_t iter;
-
-	xrm_db = xcb_xrm_database_from_default(c);
-	if (xrm_db != NULL) {
-		i = xcb_xrm_resource_get_long(xrm_db, "Xft.dpi", NULL, &dpi);
-		xcb_xrm_database_free(xrm_db);
-		if (i < 0) {
-			fprintf(stderr,
-				"Could not fetch value of Xft.dpi from Xresources falling back to highest dpi found\n");
-		} else {
-			return dpi;
-		}
-	} else {
-		fprintf(stderr,
-			"Could not open Xresources database falling back to highest dpi found\n");
-	}
-
-	iter = xcb_setup_roots_iterator(xcb_get_setup(c));
-	dpi = 0;
-	for (; iter.rem; xcb_screen_next(&iter)) {
-		/*
-		* Inspired by xdpyinfo
-		*
-		* there are 2.54 centimeters to an inch; so
-		* there are 25.4 millimeters.
-		*
-		* dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
-		*     = N pixels / (M inch / 25.4)
-		*     = N * 25.4 pixels / M inch
-		*/
-		if (iter.data != NULL) {
-			xres = ((((double) iter.data->width_in_pixels) * 25.4) /
-				((double) iter.data->width_in_millimeters));
-
-			// ignore y resolution for now
-			//yres = ((((double) iter.data->height_in_pixels) * 25.4) /
-			//	((double) iter.data->height_in_millimeters));
-			if (xres > dpi) {
-				dpi = xres;
-			}
-		}
-	}
-
-	if (dpi == 0) {
-		// if everything fails use 96
-		fprintf(stderr,
-			"Could get highest dpi, using 96 as default\n");
-
-		dpi = 96;
-	}
-
-	return dpi;
-}
-
 #endif // _XCBFT
