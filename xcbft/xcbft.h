@@ -35,7 +35,6 @@ struct xcbft_glyphset_and_advance {
 	FT_Vector advance;
 };
 
-// signatures
 bool xcbft_init(void);
 void xcbft_done(void);
 FcPattern* xcbft_query_fontsearch(FcChar8 *);
@@ -62,4 +61,4 @@ xcb_pixmap_t xcbft_create_text_pixmap(xcb_connection_t *,
 	struct utf_holder, xcb_render_color_t, xcb_render_color_t,
 	struct xcbft_patterns_holder, long);
 
-#endif // _XCBFT
+#endif
