@@ -1,3 +1,9 @@
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include <fontconfig/fontconfig.h>
+
 #include "utf8.h"
 
 struct utf_holder

@@ -1,12 +1,6 @@
 #ifndef _UTF8_UTILS_
 #define _UTF8_UTILS_
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-
-#include <fontconfig/fontconfig.h>
-
 struct utf_holder {
 	FcChar32 *str;
 	unsigned int length;

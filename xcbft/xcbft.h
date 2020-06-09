@@ -1,24 +1,6 @@
 #ifndef _XCBFT
 #define _XCBFT
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <stdint.h>
-#include <errno.h>
-#include <math.h>
-
-#include <fontconfig/fontconfig.h>
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
-#include <xcb/xcb.h>
-#include <xcb/render.h>
-#include <xcb/xcb_renderutil.h>
-
-#include "../utf8_utils/utf8.h"
-
 struct xcbft_patterns_holder {
 	FcPattern **patterns;
 	uint8_t length;
