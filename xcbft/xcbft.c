@@ -94,9 +94,7 @@ xcbft_query_by_char_support(FcChar32 character,
 	FcCharSet *charset;
 	FcPattern *charset_pattern, *pat_output;
 	struct xcbft_patterns_holder patterns;
-	struct xcbft_face_holder faces;
-
-	faces.length = 0;
+	struct xcbft_face_holder faces = {0};
 
 	/* add characters we need to a charset */
 	charset = FcCharSetCreate();
