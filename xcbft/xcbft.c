@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
@@ -23,7 +22,7 @@ xcbft_done(void)
 	FcFini();
 }
 
-bool
+int
 xcbft_init(void)
 {
 	FcBool status;
@@ -34,73 +33,6 @@ xcbft_init(void)
 	}
 
 	return status == FcTrue;
-}
-
-// Inspired by https://www.codeproject.com/Articles/1202772/Color-Topics-for-Programmers
-static uint32_t
-xcb_color_to_uint32(xcb_render_color_t rgb)
-{
-	uint32_t sm1 = 65536 - 1; // from 2^16
-	uint32_t scale = 256; // to 2^8
-
-	return
-		  (uint32_t) ( ((double)rgb.red/sm1   * (scale-1)) * scale * scale)
-		+ (uint32_t) ( ((double)rgb.green/sm1 * (scale-1)) * scale)
-		+ (uint32_t) ( ((double)rgb.blue/sm1  * (scale-1)) );
-}
-
-xcb_pixmap_t
-xcbft_create_text_pixmap(
-	xcb_connection_t *c,
-	struct utf_holder text,
-	xcb_render_color_t text_color,
-	xcb_render_color_t background_color,
-	struct xcbft_patterns_holder font_patterns,
-	long dpi)
-{
-	xcb_pixmap_t pmap, resize_pmap;
-	xcb_screen_t *screen;
-	screen = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
-	struct xcbft_face_holder faces;
-	double pix_size = 12;
-	uint32_t mask = 0;
-	uint32_t values[2];
-	xcb_gcontext_t gc;
-	
-	pix_size = xcbft_get_pixel_size(font_patterns);
-	pmap = xcb_generate_id(c);
-	faces = xcbft_load_faces(font_patterns, dpi);
-
-	// 0.2 being the factor padding on both side
-	// 0.3 being the extra factor padding for the width protection
-	uint16_t width = (pix_size*text.length/1.6)+pix_size*0.7;
-	uint16_t height = pix_size+pix_size*0.4;
-
-	xcb_create_pixmap(c, screen->root_depth, pmap, screen->root, width, height);
-
-	xcb_rectangle_t rectangles[] = { { .x = 0, .y = 0,
-			.width = width, .height = height } };
-	gc = xcb_generate_id(c);
-	mask = XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES;
-	values[0] = xcb_color_to_uint32(background_color) | 0xff000000;
-	values[1] = 0;
-	xcb_create_gc(c, gc, pmap, mask, values);
-	// draw a rectangle filling the whole pixmap with a single color
-	xcb_poly_fill_rectangle(c, pmap, gc, 1, rectangles);
-
-	FT_Vector advance = xcbft_draw_text(c, pmap,
-		0.2*pix_size, 0.2*pix_size+pix_size, // x, y
-		text, text_color, faces, dpi);
-
-	resize_pmap = xcb_generate_id(c);
-	width = advance.x+pix_size*0.4; // 0.2 on both sides
-	xcb_create_pixmap(c, screen->root_depth, resize_pmap, screen->root, width, height);
-	xcb_copy_area(c, pmap, resize_pmap, gc, 0, 0, 0, 0, width, height);
-
-	xcb_free_pixmap(c, pmap);
-	xcbft_face_holder_destroy(faces);
-
-	return resize_pmap;
 }
 
 /*
@@ -119,7 +51,7 @@ xcbft_query_fontsearch(FcChar8 *fontquery)
 
 	fc_finding_pattern = FcNameParse(fontquery);
 
-	// to match we need to fix the pattern (fill unspecified info)
+	/* to match we need to fix the pattern (fill unspecified info) */
 	FcDefaultSubstitute(fc_finding_pattern);
 	status = FcConfigSubstitute(NULL, fc_finding_pattern, FcMatchPattern);
 	if (status == FcFalse) {
@@ -166,23 +98,23 @@ xcbft_query_by_char_support(FcChar32 character,
 
 	faces.length = 0;
 
-	// add characters we need to a charset
+	/* add characters we need to a charset */
 	charset = FcCharSetCreate();
 	FcCharSetAddChar(charset, character);
 
-	// if we pass a pattern then copy it to get something close
+	/* if we pass a pattern then copy it to get something close */
 	if (copy_pattern != NULL) {
 		charset_pattern = FcPatternDuplicate(copy_pattern);
 	} else {
 		charset_pattern = FcPatternCreate();
 	}
 
-	// use the charset for the pattern search
+	/* use the charset for the pattern search */
 	FcPatternAddCharSet(charset_pattern, FC_CHARSET, charset);
-	// also force it to be scalable
+	/* also force it to be scalable */
 	FcPatternAddBool(charset_pattern, FC_SCALABLE, FcTrue);
 
-	// default & config substitutions, the usual
+	/* default & config substitutions, the usual */
 	FcDefaultSubstitute(charset_pattern);
 	status = FcConfigSubstitute(NULL, charset_pattern, FcMatchPattern);
 	if (status == FcFalse) {
@@ -207,7 +139,7 @@ xcbft_query_by_char_support(FcChar32 character,
 
 	faces = xcbft_load_faces(patterns, dpi);
 
-	// cleanup
+	/* cleanup */
 	xcbft_patterns_holder_destroy(patterns);
 	FcCharSetDestroy(charset);
 
@@ -219,18 +151,19 @@ xcbft_query_fontsearch_all(FcStrSet *queries)
 {
 	struct xcbft_patterns_holder font_patterns;
 	FcPattern *font_pattern;
+    FcStrList *iterator;
+    FcChar8 *fontquery = NULL;
 	uint8_t current_allocated;
 
 	font_patterns.patterns = NULL;
 	font_patterns.length = 0;
 
-	// start with 5, expand if needed
+	/* start with 5, expand if needed */
 	current_allocated = 5;
 	font_patterns.patterns = malloc(sizeof(FcPattern *)*current_allocated);
 
-	// safely iterate over set
-	FcStrList *iterator = FcStrListCreate(queries);
-	FcChar8 *fontquery = NULL;
+	/* safely iterate over set */
+	iterator = FcStrListCreate(queries);
 	FcStrListFirst(iterator);
 	while ((fontquery = FcStrListNext(iterator)) != NULL) {
 		font_pattern = xcbft_query_fontsearch(fontquery);
@@ -246,14 +179,14 @@ xcbft_query_fontsearch_all(FcStrSet *queries)
 		}
 	}
 	FcStrListDone(iterator);
-	// end of safely iterate over set
+	/* end of safely iterate over set */
 
 	return font_patterns;
 }
 
-// There's no way to predict the width and height of every characters
-// as they can go outside the em, so let's just use whatever we have as
-// the biggest pixel size so far in all the loaded patterns
+/* There's no way to predict the width and height of every characters */
+/* as they can go outside the em, so let's just use whatever we have as */
+/* the biggest pixel size so far in all the loaded patterns */
 double
 xcbft_get_pixel_size(struct xcbft_patterns_holder patterns)
 {
@@ -296,11 +229,11 @@ xcbft_load_faces(struct xcbft_patterns_holder patterns, long dpi)
 		return faces;
 	}
 
-	// allocate the same size as patterns as it should be <= its length
+	/* allocate the same size as patterns as it should be <= its length */
 	faces.faces = malloc(sizeof(FT_Face)*patterns.length);
 
 	for (i = 0; i < patterns.length; i++) {
-		// get the information needed from the pattern
+		/* get the information needed from the pattern */
 		result = FcPatternGet(patterns.patterns[i], FC_FILE, 0, &fc_file);
 		if (result != FcResultMatch) {
 			fprintf(stderr, "font has not file location");
@@ -312,12 +245,12 @@ xcbft_load_faces(struct xcbft_patterns_holder patterns, long dpi)
 			fc_index.type = FcTypeInteger;
 			fc_index.u.i = 0;
 		}
-		// TODO: load more info like
-		//	autohint
-		//	hinting
-		//	verticallayout
+		/* TODO: load more info like */
+		/*	autohint */
+		/*	hinting */
+		/*	verticallayout */
 
-		// load the face
+		/* load the face */
 		error = FT_New_Face(
 				library,
 				(const char *) fc_file.u.s,
@@ -345,7 +278,7 @@ xcbft_load_faces(struct xcbft_patterns_holder patterns, long dpi)
 			ft_matrix.yx = (FT_Fixed)(fc_matrix.u.m->yx * 0x10000L);
 			ft_matrix.yy = (FT_Fixed)(fc_matrix.u.m->yy * 0x10000L);
 
-			// apply the matrix
+			/* apply the matrix */
 			FT_Set_Transform(
 				faces.faces[faces.length],
 				&ft_matrix,
@@ -358,12 +291,12 @@ xcbft_load_faces(struct xcbft_patterns_holder patterns, long dpi)
 			fc_pixel_size.type = FcTypeInteger;
 			fc_pixel_size.u.d = 12;
 		}
-		//error = FT_Set_Pixel_Sizes(
-		//	faces.faces[faces.length],
-		//	0, // width
-		//	fc_pixel_size.u.d); // height
+		/*error = FT_Set_Pixel_Sizes( */
+		/*	faces.faces[faces.length], */
+		/*	0, // width */
+		/*	fc_pixel_size.u.d); // height */
 
-		// pixel_size/ (dpi/72.0)
+		/* pixel_size/ (dpi/72.0) */
 		FT_Set_Char_Size(
 			faces.faces[faces.length], 0,
 			(fc_pixel_size.u.d/((double)dpi/72.0))*64,
@@ -421,7 +354,6 @@ xcbft_patterns_holder_destroy(struct xcbft_patterns_holder patterns)
 		FcPatternDestroy(patterns.patterns[i]);
 	}
 	free(patterns.patterns);
-	// FcFini(); // TODO: we can't leave that here, find a way for cleanup
 }
 
 void
@@ -438,92 +370,12 @@ xcbft_face_holder_destroy(struct xcbft_face_holder faces)
 	FT_Done_FreeType(faces.library);
 }
 
-FT_Vector
-xcbft_draw_text(
-	xcb_connection_t *c, // conn
-	xcb_drawable_t pmap, // win or pixmap
-	int16_t x, int16_t y, // x, y
-	struct utf_holder text, // text
-	xcb_render_color_t color,
-	struct xcbft_face_holder faces,
-	long dpi)
-{
-	xcb_void_cookie_t cookie;
-	uint32_t values[2];
-	xcb_generic_error_t *error;
-	xcb_render_picture_t picture;
-	xcb_render_pictforminfo_t *fmt;
-	const xcb_render_query_pict_formats_reply_t *fmt_rep =
-		xcb_render_util_query_formats(c);
-
-	fmt = xcb_render_util_find_standard_format(
-		fmt_rep,
-		XCB_PICT_STANDARD_ARGB_32
-	);
-
-	// create the picture with its attribute and format
-	picture = xcb_generate_id(c);
-	values[0] = XCB_RENDER_POLY_MODE_IMPRECISE;
-	values[1] = XCB_RENDER_POLY_EDGE_SMOOTH;
-	cookie = xcb_render_create_picture_checked(c,
-		picture, // pid
-		pmap, // drawable from the user
-		fmt->id, // format
-		XCB_RENDER_CP_POLY_MODE|XCB_RENDER_CP_POLY_EDGE,
-		values); // make it smooth
-
-	error = xcb_request_check(c, cookie);
-	if (error) {
-		fprintf(stderr, "ERROR: %s : %d\n",
-			"could not create picture",
-			error->error_code);
-	}
-
-	// create a 1x1 pixel pen (on repeat mode) of a certain color
-	xcb_render_picture_t fg_pen = xcbft_create_pen(c, color);
-
-	// load all the glyphs in a glyphset
-	// TODO: maybe cache the xcb_render_glyphset_t
-	struct xcbft_glyphset_and_advance glyphset_advance =
-		xcbft_load_glyphset(c, faces, text, dpi);
-
-	// we now have a text stream - a bunch of glyphs basically
-	xcb_render_util_composite_text_stream_t *ts =
-		xcb_render_util_composite_text_stream(
-				glyphset_advance.glyphset,
-				text.length, 0);
-
-	// draw the text at a certain positions
-	xcb_render_util_glyphs_32(ts, x, y, text.length, text.str);
-
-	// finally render using the repeated pen color on the picture
-	// (which is related to the pixmap)
-	xcb_render_util_composite_text(
-		c, // connection
-		XCB_RENDER_PICT_OP_OVER, //op
-		fg_pen, // src
-		picture, // dst
-		0, // fmt
-		0, // src x
-		0, // src y
-		ts); // txt stream
-
-	xcb_render_util_composite_text_free(ts);
-	xcb_render_free_picture(c, picture);
-	xcb_render_free_picture(c, fg_pen);
-	xcb_render_util_disconnect(c);
-
-	return glyphset_advance.advance;
-}
-
 xcb_render_picture_t
 xcbft_create_pen(xcb_connection_t *c, xcb_render_color_t color)
 {
-	xcb_render_pictforminfo_t *fmt;
-	const xcb_render_query_pict_formats_reply_t *fmt_rep =
-		xcb_render_util_query_formats(c);
-	// alpha can only be used with a picture containing a pixmap
-	fmt = xcb_render_util_find_standard_format(
+	const xcb_render_query_pict_formats_reply_t *fmt_rep = xcb_render_util_query_formats(c);
+	/* alpha can only be used with a picture containing a pixmap */
+	xcb_render_pictforminfo_t *fmt = xcb_render_util_find_standard_format(
 		fmt_rep,
 		XCB_PICT_STANDARD_ARGB_32
 	);
@@ -533,26 +385,19 @@ xcbft_create_pen(xcb_connection_t *c, xcb_render_color_t color)
 		).data->root;
 
 	xcb_pixmap_t pm = xcb_generate_id(c);
-	xcb_create_pixmap(c, 32, pm, root, 1, 1);
+    xcb_rectangle_t rect = {0, 0, 1, 1};
+	xcb_render_picture_t picture = xcb_generate_id(c);
 
 	uint32_t values[1];
 	values[0] = XCB_RENDER_REPEAT_NORMAL;
 
-	xcb_render_picture_t picture = xcb_generate_id(c);
-
+	xcb_create_pixmap(c, 32, pm, root, 1, 1);
 	xcb_render_create_picture(c,
 		picture,
 		pm,
 		fmt->id,
 		XCB_RENDER_CP_REPEAT,
 		values);
-
-	xcb_rectangle_t rect = {
-		.x = 0,
-		.y = 0,
-		.width = 1,
-		.height = 1
-	};
 
 	xcb_render_fill_rectangles(c,
 		XCB_RENDER_PICT_OP_OVER,
@@ -583,7 +428,7 @@ xcbft_load_glyphset(
 	total_advance.x = total_advance.y = 0;
 	glyph_index = 0;
 	faces_for_unsupported.length = 0;
-	// create a glyphset with a specific format
+	/* create a glyphset with a specific format */
 	fmt_a8 = xcb_render_util_find_standard_format(
 		fmt_rep,
 		XCB_PICT_STANDARD_A_8
@@ -598,17 +443,17 @@ xcbft_load_glyphset(
 				text.str[i]);
 			if (glyph_index != 0) break;
 		}
-		// here use face at index j
+		/* here use face at index j */
 		if (glyph_index != 0) {
 			glyph_advance = xcbft_load_glyph(c, gs, faces.faces[j], text.str[i]);
 			total_advance.x += glyph_advance.x;
 			total_advance.y += glyph_advance.y;
 		} else {
-			// fallback
-			// TODO pass at least some of the query (font size, italic, etc..)
+			/* fallback */
+			/* TODO pass at least some of the query (font size, italic, etc..) */
 
 			glyph_index = 0;
-			// check if we already loaded that face as fallback
+			/* check if we already loaded that face as fallback */
 			if (faces_for_unsupported.length > 0) {
 				glyph_index = FT_Get_Char_Index(
 					faces_for_unsupported.faces[0],
@@ -626,7 +471,7 @@ xcbft_load_glyphset(
 				fprintf(stderr,
 					"No faces found supporting character: %02x\n",
 					text.str[i]);
-				// draw a block using whatever font
+				/* draw a block using whatever font */
 				glyph_advance = xcbft_load_glyph(c, gs, faces.faces[0], text.str[i]);
 				total_advance.x += glyph_advance.x;
 				total_advance.y += glyph_advance.y;
@@ -658,7 +503,8 @@ xcbft_load_glyph(
 	xcb_connection_t *c, xcb_render_glyphset_t gs, FT_Face face, int charcode)
 {
 	uint32_t gid;
-	int glyph_index;
+	int glyph_index, stride, y;
+    uint8_t *tmpbitmap;
 	FT_Vector glyph_advance;
 	xcb_render_glyphinfo_t ginfo;
 	FT_Bitmap *bitmap;
@@ -679,17 +525,18 @@ xcbft_load_glyph(
 	ginfo.x_off = glyph_advance.x;
 	ginfo.y_off = glyph_advance.y;
 
-	// keep track of the max horiBearingY (yMax) and yMin
-	// 26.6 fractional pixel format
-	// yMax = face->glyph->metrics.horiBearingY/64; (yMax);
-	// yMin = -(face->glyph->metrics.height -
-	//		face->glyph->metrics.horiBearingY)/64;
+    /*
+	 * keep track of the max horiBearingY (yMax) and yMin
+	 * 26.6 fractional pixel format
+	 * yMax = face->glyph->metrics.horiBearingY/64; (yMax);
+	 * yMin = -(face->glyph->metrics.height -
+	 *		face->glyph->metrics.horiBearingY)/64;
+     */
 
 	gid = charcode;
 
-	int stride = (ginfo.width+3)&~3;
-	uint8_t *tmpbitmap = calloc(sizeof(uint8_t),stride*ginfo.height);
-	int y;
+	stride = (ginfo.width+3)&~3;
+	tmpbitmap = calloc(sizeof(uint8_t),stride*ginfo.height);
 
 	for (y = 0; y < ginfo.height; y++)
 		memcpy(tmpbitmap+y*stride, bitmap->buffer+y*ginfo.width, ginfo.width);

@@ -13,7 +13,7 @@ char_to_uint32(char *str)
 	FcChar32 *output = NULL;
 	int length = 0, shift = 0;
 
-	// there should be less than or same as the strlen of str
+	/* there should be less than or same as the strlen of str */
 	output = (FcChar32 *)malloc(sizeof(FcChar32)*strlen(str));
 	if (!output) {
 		puts("couldn't allocate mem for char_to_uint32");
